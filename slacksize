@@ -1,0 +1,140 @@
+#!/usr/bin/env bash
+set -e
+
+usage() {
+	# Display Help
+	echo
+	echo "USAGE:"
+	echo "	$(basename $0) [options] <input> <output>" 1>&2
+	echo
+	echo "OPTIONS:"
+	echo "	-c     Crop to image content"
+	echo "	-t     Make background transparent"
+	echo "	-h     Display usage"
+	echo
+	exit 1
+}
+
+while getopts "cth" OPTION; do
+	case $OPTION in
+	c)
+		CROP=yes
+		;;
+	t)
+		TRANSPARENT=yes
+		echo "Smart transparency, or Selective?"
+		select opt in Smart Selective; do
+			case $opt in
+			Smart)
+				MODE=smart
+				break
+				;;
+			Selective)
+				MODE=selective
+				break
+				;;
+			\?)
+				echo "Invalid selection"
+				;;
+			esac
+		done
+		;;
+	h)
+		echo "Description: Resize image for Slack emoji"
+		usage
+		;;
+	*)
+		echo "Unknow comandline switch: $OPTION"
+		usage
+		;;
+	esac
+done
+shift $((OPTIND - 1))
+
+IMAGE=$1
+OUTPUT=$2
+
+if [[ ! $(command -v convert) ]]; then
+	echo "Need to install Imagemagick"
+fi
+
+if [[ -z $IMAGE || -z $OUTPUT ]]; then
+	echo "Missing input or output image."
+	usage
+fi
+
+unameOut="$(uname -s)"
+case "${unameOut}" in
+Linux*) RESIZE="128x128>" ;;
+Darwin*) RESIZE="128x128\>" ;;
+esac
+
+resize() {
+	convert $IMAGE -resize $RESIZE -gravity center -extent 128x128 $OUTPUT
+}
+
+cropimg() {
+	convert $IMAGE -trim +repage -resize $RESIZE -gravity center -extent 128x128 $OUTPUT
+}
+
+transimg() {
+	if [[ $OUTPUT != *.png && $OUTPUT != *.gif ]]; then
+		echo "Output file must be file type .png or .gif for transparency to work"
+		exit 1
+	fi
+	if [[ $MODE == selective ]]; then
+		echo
+		echo "Enter 6-character color hex code to be set transparent, or press enter to use default"
+		while ! [[ $TCOLOR =~ ^\#[0-9A-Fa-f]{6}$ ]]; do
+			read -p "Color hex code [#ffffff]: " TCOLOR
+			TCOLOR=${TCOLOR:-#ffffff}
+		done
+		convert $IMAGE -resize $RESIZE -gravity center -extent 128x128 -fuzz 10% -transparent "${TCOLOR}" $OUTPUT
+	elif [[ $MODE == smart ]]; then
+		color=$(convert $IMAGE -format "%[pixel:p{0,0}]" info:-)
+		convert $IMAGE -resize $RESIZE -gravity center -extent 128x128 \
+			-alpha off -bordercolor $color -border 1 \
+			\( +clone -fuzz 30% -fill none -floodfill +0+0 $color \
+			-alpha extract -geometry 200% -blur 0x0.5 \
+			-morphology erode square:1 -geometry 50% \) \
+			-compose CopyOpacity -composite -shave 1 $OUTPUT
+	fi
+}
+
+croptrans() {
+	if [[ $OUTPUT != *.png && $OUTPUT != *.gif ]]; then
+		echo "Output file must be file type .png or .gif for transparency to work"
+		exit 1
+	fi
+	if [[ $MODE == selective ]]; then
+		echo
+		echo "Enter 6-character color hex code to be set transparent, or press enter to use default"
+		while ! [[ $TCOLOR =~ ^\#[0-9A-Fa-f]{6}$ ]]; do
+			read -p "Color hex code [#ffffff]: " TCOLOR
+			TCOLOR=${TCOLOR:-#ffffff}
+		done
+		convert $IMAGE -trim +repage -resize $RESIZE -gravity center -extent 128x128 -fuzz 10% -transparent "$TCOLOR" $OUTPUT
+	elif [[ $MODE == smart ]]; then
+		color=$(convert $IMAGE -format "%[pixel:p{0,0}]" info:-)
+		convert $IMAGE -trim +repage -resize $RESIZE -gravity center -extent 128x128 \
+			-alpha off -bordercolor $color -border 1 \
+			\( +clone -fuzz 30% -fill none -floodfill +0+0 $color \
+			-alpha extract -geometry 200% -blur 0x0.5 \
+			-morphology erode square:1 -geometry 50% \) \
+			-compose CopyOpacity -composite -shave 1 $OUTPUT
+	fi
+}
+
+if [[ -n $CROP && -n $TRANSPARENT ]]; then
+	croptrans
+	echo "Wrote emoji $OUTPUT"
+elif [[ -n $CROP && -z $TRANSPARENT ]]; then
+	cropimg
+	echo "Wrote emoji $OUTPUT"
+elif [[ -z $CROP && -n $TRANSPARENT ]]; then
+	transimg
+	echo "Wrote emoji $OUTPUT"
+elif [[ -z $CROP && -z $TRANSPARENT ]]; then
+	resize
+	echo "Wrote emoji $OUTPUT"
+fi
