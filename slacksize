@@ -53,6 +53,15 @@ shift $((OPTIND - 1))
 
 IMAGE=$1
 OUTPUT=$2
+TMPIMG=$(mktemp /tmp/tmpimgXXXXXXXXXX.gif)
+
+if [[ $IMAGE == *.gif && $OUTPUT == *.gif ]]; then
+	convert -dispose previous -background transparent $IMAGE -coalesce $TMPIMG
+	export IMAGE=$TMPIMG
+elif [[ $IMAGE == *.mp4 && $OUTPUT == *.gif ]]; then
+  convert -dispose previous -background transparent $IMAGE -coalesce -layers optimize -loop 0 $TMPIMG
+  export IMAGE=$TMPIMG
+fi
 
 if [[ ! $(command -v convert) ]]; then
 	echo "Need to install Imagemagick"
@@ -83,6 +92,7 @@ transimg() {
 		exit 1
 	fi
 	if [[ $MODE == selective ]]; then
+    xcolor & feh $IMAGE
 		echo
 		echo "Enter 6-character color hex code to be set transparent, or press enter to use default"
 		while ! [[ $TCOLOR =~ ^\#[0-9A-Fa-f]{6}$ ]]; do
@@ -107,6 +117,7 @@ croptrans() {
 		exit 1
 	fi
 	if [[ $MODE == selective ]]; then
+    xcolor & feh $IMAGE
 		echo
 		echo "Enter 6-character color hex code to be set transparent, or press enter to use default"
 		while ! [[ $TCOLOR =~ ^\#[0-9A-Fa-f]{6}$ ]]; do
@@ -138,3 +149,5 @@ elif [[ -z $CROP && -z $TRANSPARENT ]]; then
 	resize
 	echo "Wrote emoji $OUTPUT"
 fi
+
+rm $TMPIMG
